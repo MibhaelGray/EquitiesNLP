@@ -1,38 +1,28 @@
+"""
+Data Collector with Simple Database Storage
+Location: src/data_collector.py
+"""
+
 import os
 import praw
 from dotenv import load_dotenv
 from datetime import datetime
 import sqlite3
 
-
 load_dotenv()
 
-
-
+# Reddit connection
 reddit = praw.Reddit(
     client_id=os.getenv('REDDIT_CLIENT_ID'),
     client_secret=os.getenv('REDDIT_CLIENT_SECRET'),
-    user_agent='script:NgcSZoaaq2yALRUgvvZGLA:1.0 (by /u/Mgray-)'  # Change this to your app name
+    user_agent='script:NgcSZoaaq2yALRUgvvZGLA:1.0 (by /u/Mgray-)'
 )
 
-# Access the wallstreetbets subreddit
+# Get subreddit
 wsb = reddit.subreddit('wallstreetbets')
 
-# Example 1: Get the 10 hottest posts
-print("=== Top 10 Hot Posts ===")
-for post in wsb.hot(limit=10):
-    print(f"Title: {post.title}")
-    print(f"Score: {post.score}")
-    print(f"Comments: {post.num_comments}")
-    print(f"URL: {post.url}")
-    print("-" * 50)
-
-
-
-
-print("Fetching top 1000 posts from r/wallstreetbets (past month)...")
-print("=" * 60)
-
+# Collect posts
+print("Fetching top posts from r/wallstreetbets...")
 posts_data = []
 for post in wsb.top(time_filter='month', limit=100):
     posts_data.append({
@@ -42,17 +32,36 @@ for post in wsb.top(time_filter='month', limit=100):
         'created_utc': post.created_utc,
         'created_date': datetime.fromtimestamp(post.created_utc).strftime('%Y-%m-%d %H:%M:%S'),
         'num_comments': post.num_comments,
-        'selftext': post.selftext,
+        'selftext': post.selftext[:500] if post.selftext else '',  # Truncate to 500 chars
         'url': post.url,
         'id': post.id
     })
-    
-    # Print progress every 100 posts
-    if len(posts_data) % 100 == 0:
-        print(f"Fetched {len(posts_data)} posts...")
 
-print(f"\nSuccessfully fetched {len(posts_data)} posts!")
-print(f"Date range: {posts_data[-1]['created_date']} to {posts_data[0]['created_date']}")
-print(f"Top post: '{posts_data[0]['title']}' (Score: {posts_data[0]['score']})")
+print(f"Collected {len(posts_data)} posts")
 
-print(posts_data)
+# Store in database
+conn = sqlite3.connect('../data/reddit_posts.db')
+cursor = conn.cursor()
+
+for post in posts_data:
+    cursor.execute("""
+        INSERT OR REPLACE INTO posts 
+        (id, title, score, author, created_utc, created_date, num_comments, selftext, url)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        post['id'],
+        post['title'],
+        post['score'],
+        post['author'],
+        post['created_utc'],
+        post['created_date'],
+        post['num_comments'],
+        post['selftext'],
+        post['url']
+    ))
+
+conn.commit()
+conn.close()
+
+print("Posts saved to database!")
+
